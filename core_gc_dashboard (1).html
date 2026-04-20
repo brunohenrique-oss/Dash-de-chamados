@@ -1,0 +1,466 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Core GC — Central de Causas Raiz</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=DM+Sans:wght@300;400;500;600&display=swap');
+:root{
+  --bg:#0d0f14;--s1:#13161d;--s2:#1a1e28;
+  --bd:rgba(255,255,255,.07);--bd2:rgba(255,255,255,.13);
+  --t1:#e8eaf0;--t2:#8a8fa8;--t3:#50556a;
+  --ac:#4f7fff;--ac2:rgba(79,127,255,.15);
+  --gr:#2ecc8e;--gr2:rgba(46,204,142,.12);
+  --am:#f5a623;--am2:rgba(245,166,35,.12);
+  --rd:#e85c5c;--rd2:rgba(232,92,92,.12);
+  --pu:#8b6bff;--pu2:rgba(139,107,255,.12);
+  --te:#2eccc4;--te2:rgba(46,204,196,.12);
+  --pk:#ff82c8;--pk2:rgba(255,130,200,.12);
+  --cy:#4fc8ff;--cy2:rgba(79,200,255,.12);
+  --mono:'IBM Plex Mono',monospace;
+  --sans:'DM Sans',sans-serif;
+  --r:6px;--r2:10px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{background:var(--bg);color:var(--t1);font-family:var(--sans);font-size:14px;line-height:1.6;display:flex;overflow:hidden}
+.sidebar{width:240px;flex-shrink:0;background:var(--s1);border-right:1px solid var(--bd);display:flex;flex-direction:column;height:100vh;overflow-y:auto}
+.main{flex:1;min-width:0;height:100vh;overflow-y:auto}
+.logo{padding:20px;border-bottom:1px solid var(--bd)}
+.logo-mark{font-family:var(--mono);font-size:10px;color:var(--ac);letter-spacing:.12em;text-transform:uppercase}
+.logo-title{font-size:15px;font-weight:600;margin-top:4px}
+.logo-sub{font-size:11px;color:var(--t3);margin-top:2px}
+.nav{padding:10px 0;flex:1}
+.nav-sec{padding:12px 20px 4px;font-family:var(--mono);font-size:9px;letter-spacing:.15em;text-transform:uppercase;color:var(--t3)}
+.nav-item{display:flex;align-items:center;gap:8px;padding:7px 20px;cursor:pointer;color:var(--t2);font-size:13px;border-left:2px solid transparent;transition:all .15s;user-select:none}
+.nav-item:hover{background:rgba(255,255,255,.04);color:var(--t1)}
+.nav-item.on{background:var(--ac2);color:var(--ac);border-left-color:var(--ac)}
+.ndot{width:7px;height:7px;border-radius:50%;flex-shrink:0}
+.nbadge{background:var(--ac2);color:var(--ac);font-family:var(--mono);font-size:10px;padding:1px 6px;border-radius:10px;margin-left:auto}
+.sidebar-ft{padding:16px 20px;border-top:1px solid var(--bd)}
+.last-sync{font-size:11px;color:var(--t3);text-align:center;font-family:var(--mono)}
+.topbar{background:var(--s1);border-bottom:1px solid var(--bd);padding:14px 28px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:20}
+.topbar-title{font-size:15px;font-weight:600}
+.topbar-sub{font-size:11px;color:var(--t3);font-family:var(--mono);margin-top:2px}
+.date-pill{background:var(--s2);border:1px solid var(--bd2);border-radius:var(--r);padding:4px 12px;font-family:var(--mono);font-size:11px;color:var(--t2)}
+.content{padding:24px 28px}
+.page{display:none}
+.page.on{display:block}
+.stats{display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin-bottom:24px}
+.stat{background:var(--s1);border:1px solid var(--bd);border-radius:var(--r2);padding:16px}
+.stat-val{font-size:28px;font-weight:600;font-family:var(--mono);line-height:1}
+.stat-lbl{font-size:11px;color:var(--t2);margin-top:6px;text-transform:uppercase;letter-spacing:.06em}
+.fbar{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:16px}
+.fchip{padding:5px 13px;border-radius:20px;font-size:12px;border:1px solid var(--bd2);background:transparent;color:var(--t2);cursor:pointer;font-family:var(--sans);transition:all .15s}
+.fchip:hover{border-color:var(--ac);color:var(--t1)}
+.fchip.on{background:var(--ac2);border-color:var(--ac);color:var(--ac)}
+.tcard{background:var(--s1);border:1px solid var(--bd);border-radius:var(--r2);overflow:hidden;margin-bottom:24px}
+.tcard-hdr{padding:12px 16px;border-bottom:1px solid var(--bd);display:flex;align-items:center;justify-content:space-between}
+.tcard-body{overflow-x:auto}
+.sec-title{font-size:11px;font-weight:500;text-transform:uppercase;letter-spacing:.1em;color:var(--t3);font-family:var(--mono)}
+table{width:100%;border-collapse:collapse;min-width:800px}
+th{padding:8px 12px;text-align:left;font-family:var(--mono);font-size:9px;letter-spacing:.1em;text-transform:uppercase;color:var(--t3);border-bottom:1px solid var(--bd);white-space:nowrap}
+td{padding:10px 12px;border-bottom:1px solid var(--bd);font-size:13px;vertical-align:top}
+tr:last-child td{border-bottom:none}
+tr:hover td{background:rgba(255,255,255,.02)}
+.skey{font-family:var(--mono);font-size:11px;color:var(--ac)}
+.pbadge{display:inline-block;padding:2px 8px;border-radius:4px;font-size:10px;font-family:var(--mono);white-space:nowrap}
+.p1{background:rgba(232,92,92,.15);color:var(--rd)}
+.p2{background:rgba(245,166,35,.15);color:var(--am)}
+.p3{background:rgba(79,127,255,.15);color:var(--ac)}
+.p4{background:rgba(139,107,255,.1);color:var(--pu)}
+.p5{background:rgba(80,85,106,.15);color:var(--t3)}
+.schip{display:inline-flex;align-items:center;gap:5px;font-size:11px;color:var(--t2)}
+.sdot{width:5px;height:5px;border-radius:50%}
+.ftag{display:inline-block;padding:2px 7px;border-radius:4px;font-size:10px;margin:1px;white-space:nowrap}
+.f-gc{background:var(--pu2);color:var(--pu)}
+.f-nexthub{background:var(--te2);color:var(--te)}
+.f-fiscal{background:var(--gr2);color:var(--gr)}
+.f-saesys{background:var(--am2);color:var(--am)}
+.f-inventario{background:var(--cy2);color:var(--cy)}
+.f-reversa{background:var(--rd2);color:var(--rd)}
+.f-loja{background:var(--pk2);color:var(--pk)}
+.f-outro{background:rgba(80,85,106,.1);color:var(--t3)}
+.gbadge{display:inline-block;padding:2px 8px;border-radius:4px;font-size:10px;font-family:var(--mono);font-weight:500}
+.g-crit{background:var(--rd2);color:var(--rd)}
+.g-high{background:var(--am2);color:var(--am)}
+.g-med{background:var(--ac2);color:var(--ac)}
+.abtn{padding:5px 12px;border:1px solid var(--bd2);border-radius:var(--r);background:transparent;color:var(--t2);font-size:12px;cursor:pointer;font-family:var(--sans);transition:all .15s}
+.abtn:hover{border-color:var(--ac);color:var(--ac)}
+.cgrid{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:24px}
+.ccard{background:var(--s1);border:1px solid var(--bd);border-radius:var(--r2);padding:16px;border-left-width:3px}
+.ccard.crit{border-left-color:var(--rd)}
+.ccard.high{border-left-color:var(--am)}
+.ccard.med{border-left-color:var(--ac)}
+.ctop{display:flex;align-items:flex-start;justify-content:space-between;gap:8px;margin-bottom:10px}
+.ctitle{font-size:13px;font-weight:500;flex:1}
+.cdesc{font-size:12px;color:var(--t2);line-height:1.6;margin-bottom:12px}
+.cmeta{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px}
+.mbox{background:var(--s2);border-radius:var(--r);padding:8px 10px;margin-bottom:8px}
+.mlbl{font-family:var(--mono);font-size:9px;letter-spacing:.1em;text-transform:uppercase;color:var(--t3);margin-bottom:3px}
+.mval{font-size:12px;color:var(--t2);line-height:1.5}
+.gut-bars{margin-top:8px}
+.grow{display:flex;align-items:center;gap:6px;margin-bottom:4px}
+.glbl{font-family:var(--mono);font-size:9px;color:var(--t3);width:18px}
+.gtrack{flex:1;height:3px;background:var(--s2);border-radius:2px}
+.gfill{height:100%;border-radius:2px}
+.gnum{font-family:var(--mono);font-size:9px;color:var(--t3);width:10px}
+.ctags{display:flex;flex-wrap:wrap;gap:3px;margin-top:10px;align-items:center}
+.ccount{font-size:10px;color:var(--t3);margin-left:4px}
+.charts2{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:24px}
+.chcard{background:var(--s1);border:1px solid var(--bd);border-radius:var(--r2);padding:16px}
+.chtitle{font-family:var(--mono);font-size:9px;text-transform:uppercase;letter-spacing:.1em;color:var(--t3);margin-bottom:16px}
+.barchart{display:flex;flex-direction:column;gap:9px}
+.brow{display:flex;align-items:center;gap:10px;width:100%}
+.blbl{font-size:12px;color:var(--t2);flex-shrink:0}
+.btrack{flex:1;height:6px;background:var(--s2);border-radius:3px}
+.bfill{height:100%;border-radius:3px}
+.bval{font-family:var(--mono);font-size:11px;color:var(--t3);width:24px;text-align:right;flex-shrink:0}
+.donut-wrap{display:flex;align-items:center;gap:20px}
+.dlegend{flex:1}
+.dleg-item{display:flex;align-items:center;gap:8px;margin-bottom:8px}
+.dleg-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+.dleg-lbl{font-size:12px;color:var(--t2);flex:1}
+.dleg-val{font-family:var(--mono);font-size:11px;color:var(--t3)}
+.chart-full{margin-bottom:24px}
+</style>
+</head>
+<body>
+
+<aside class="sidebar">
+  <div class="logo">
+    <div class="logo-mark">Squad · Core GC</div>
+    <div class="logo-title">Central de Causas Raiz</div>
+    <div class="logo-sub">STI × Mapeamento GC</div>
+  </div>
+  <nav class="nav">
+    <div class="nav-sec">Visão geral</div>
+    <div class="nav-item on" onclick="gotoPage('dash',this)">
+      <svg width="13" height="13" fill="none" viewBox="0 0 16 16"><rect x="1" y="1" width="6" height="6" rx="1" fill="currentColor" opacity=".8"/><rect x="9" y="1" width="6" height="6" rx="1" fill="currentColor" opacity=".4"/><rect x="1" y="9" width="6" height="6" rx="1" fill="currentColor" opacity=".4"/><rect x="9" y="9" width="6" height="6" rx="1" fill="currentColor" opacity=".7"/></svg>
+      Dashboard
+    </div>
+    <div class="nav-item" onclick="gotoPage('chamados',this)">
+      <svg width="13" height="13" fill="none" viewBox="0 0 16 16"><rect x="1" y="2" width="14" height="2" rx="1" fill="currentColor"/><rect x="1" y="7" width="10" height="2" rx="1" fill="currentColor" opacity=".6"/><rect x="1" y="12" width="7" height="2" rx="1" fill="currentColor" opacity=".4"/></svg>
+      Chamados do dia
+      <span class="nbadge">20</span>
+    </div>
+    <div class="nav-item" onclick="gotoPage('causas',this)">
+      <svg width="13" height="13" fill="none" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6" stroke="currentColor" stroke-width="1.5"/><path d="M8 5v4M8 11v1" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+      Causas Raiz
+      <span class="nbadge">9</span>
+    </div>
+    <div class="nav-sec" style="margin-top:8px">Filtrar por fluxo</div>
+    <div class="nav-item" onclick="filterFluxo('gc',this)"><span class="ndot" style="background:var(--pu)"></span>Operação GC</div>
+    <div class="nav-item" onclick="filterFluxo('nexthub',this)"><span class="ndot" style="background:var(--te)"></span>Integração / NextHub</div>
+    <div class="nav-item" onclick="filterFluxo('fiscal',this)"><span class="ndot" style="background:var(--gr)"></span>Fluxo Fiscal</div>
+    <div class="nav-item" onclick="filterFluxo('saesys',this)"><span class="ndot" style="background:var(--am)"></span>Expedição / SAEsys</div>
+    <div class="nav-item" onclick="filterFluxo('inventario',this)"><span class="ndot" style="background:var(--cy)"></span>Contagem / Inventário</div>
+    <div class="nav-item" onclick="filterFluxo('reversa',this)"><span class="ndot" style="background:var(--rd)"></span>Reversa / Logística</div>
+    <div class="nav-item" onclick="filterFluxo('loja',this)"><span class="ndot" style="background:var(--pk)"></span>Operação Lojas</div>
+  </nav>
+  <div class="sidebar-ft">
+    <div class="last-sync">20/04/2026 · Análise completa</div>
+  </div>
+</aside>
+
+<div class="main">
+  <div class="topbar">
+    <div>
+      <div class="topbar-title">Mapeamento de Causas Raiz — Core GC</div>
+      <div class="topbar-sub">STI · Suporte TI · helpdeskmobly.atlassian.net</div>
+    </div>
+    <div class="date-pill">20 de abril de 2026</div>
+  </div>
+
+  <div class="content">
+
+    <!-- DASHBOARD -->
+    <div id="p-dash" class="page on">
+      <div class="stats">
+        <div class="stat"><div class="stat-val">20</div><div class="stat-lbl">Chamados hoje</div></div>
+        <div class="stat"><div class="stat-val" style="color:var(--rd)">4</div><div class="stat-lbl">Causas críticas GUT≥100</div></div>
+        <div class="stat"><div class="stat-val" style="color:var(--pu)">6</div><div class="stat-lbl">Fluxos afetados</div></div>
+        <div class="stat"><div class="stat-val" style="color:var(--am)">14</div><div class="stat-lbl">Sem responsável</div></div>
+        <div class="stat"><div class="stat-val" style="color:var(--te)">125</div><div class="stat-lbl">GUT máximo</div></div>
+      </div>
+      <div class="charts2">
+        <div class="chcard">
+          <div class="chtitle">Chamados por fluxo impactado</div>
+          <div class="barchart" id="chart-fluxos"></div>
+        </div>
+        <div class="chcard">
+          <div class="chtitle">Distribuição de prioridades</div>
+          <div class="donut-wrap">
+            <canvas id="donut" width="110" height="110"></canvas>
+            <div class="dlegend" id="dlegend"></div>
+          </div>
+        </div>
+      </div>
+      <div class="chcard chart-full">
+        <div class="chtitle">Ranking de causas raiz por GUT score (Gravidade × Urgência × Tendência)</div>
+        <div class="barchart" id="chart-gut"></div>
+      </div>
+    </div>
+
+    <!-- CHAMADOS -->
+    <div id="p-chamados" class="page">
+      <div class="fbar" id="fbar-ch">
+        <button class="fchip on" onclick="fCh('all',this)">Todos</button>
+        <button class="fchip" onclick="fCh('gc',this)">GC Core</button>
+        <button class="fchip" onclick="fCh('nexthub',this)">NextHub</button>
+        <button class="fchip" onclick="fCh('fiscal',this)">Fiscal</button>
+        <button class="fchip" onclick="fCh('saesys',this)">SAEsys</button>
+        <button class="fchip" onclick="fCh('inventario',this)">Inventário</button>
+        <button class="fchip" onclick="fCh('reversa',this)">Reversa</button>
+        <button class="fchip" onclick="fCh('loja',this)">Lojas</button>
+        <button class="fchip" onclick="fCh('outro',this)">Outros</button>
+      </div>
+      <div class="tcard">
+        <div class="tcard-hdr">
+          <span class="sec-title">Chamados — 20/04/2026 &middot; <span id="cham-cnt">20 registros</span></span>
+          <button class="abtn" onclick="exportCsv()">&#8595; Exportar CSV</button>
+        </div>
+        <div class="tcard-body">
+          <table><thead><tr>
+            <th>Ticket</th><th>Título</th><th>Prioridade</th><th>Status</th>
+            <th>Fluxo</th><th>Causa raiz</th><th>GUT</th>
+          </tr></thead><tbody id="tbody"></tbody></table>
+        </div>
+      </div>
+    </div>
+
+    <!-- CAUSAS RAIZ -->
+    <div id="p-causas" class="page">
+      <div class="fbar" id="fbar-ca">
+        <button class="fchip on" onclick="fCa('all',this)">Todas</button>
+        <button class="fchip" onclick="fCa('crit',this)">Críticas (GUT ≥ 100)</button>
+        <button class="fchip" onclick="fCa('high',this)">Altas (50–99)</button>
+        <button class="fchip" onclick="fCa('med',this)">Médias (&lt; 50)</button>
+      </div>
+      <div class="cgrid" id="cgrid"></div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+const FL={gc:'GC Core',nexthub:'NextHub',fiscal:'Fiscal',saesys:'SAEsys',inventario:'Inventário',reversa:'Reversa',loja:'Lojas',outro:'Outro'};
+const FC={gc:'#8b6bff',nexthub:'#2eccc4',fiscal:'#2ecc8e',saesys:'#f5a623',inventario:'#4fc8ff',reversa:'#e85c5c',loja:'#ff82c8',outro:'#50556a'};
+const PL={1:'Gravíssima',2:'Crítica',3:'Alta',4:'Média',5:'Trivial'};
+const PC={1:'#e85c5c',2:'#f5a623',3:'#4f7fff',4:'#8b6bff',5:'#50556a'};
+
+const CHAMADOS=[
+  {key:'STI-67863',sum:'Erro de integração — pedido 14/04 não integrou',pri:1,status:'TRIAGEM',fluxos:['nexthub','gc'],causa:'CR001',gut_g:5,gut_u:5,gut_t:5,gut:125},
+  {key:'STI-67862',sum:'Sem acesso à contagem do grupo 27',pri:5,status:'AGUARDANDO INFORMAÇÃO',fluxos:['inventario'],causa:'CR011',gut_g:4,gut_u:4,gut_t:5,gut:80},
+  {key:'STI-67861',sum:'ERRO EXECUÇÃO SPED FILIAL 04 CAJAMAR',pri:5,status:'AGUARDANDO ATENDIMENTO N1',fluxos:['fiscal'],causa:'CR013',gut_g:3,gut_u:3,gut_t:3,gut:27},
+  {key:'STI-67860',sum:'Desprogramação não permitida — pedido WMS',pri:1,status:'AGUARDANDO ATENDIMENTO N1',fluxos:['gc','nexthub'],causa:'CR003',gut_g:5,gut_u:5,gut_t:4,gut:100},
+  {key:'STI-67859',sum:'WMS — erro ao desprogramar para reagendar',pri:4,status:'AGUARDANDO ATENDIMENTO N1',fluxos:['gc','nexthub'],causa:'CR003',gut_g:4,gut_u:4,gut_t:4,gut:64},
+  {key:'STI-67858',sum:'ERRO DE INTEGRAÇÃO — Cajamar dias 18 e 20',pri:2,status:'AGUARDANDO ATENDIMENTO N1',fluxos:['nexthub','gc'],causa:'CR001',gut_g:4,gut_u:4,gut_t:4,gut:64},
+  {key:'STI-67857',sum:'Faturamento com lentidão — checkout 3',pri:1,status:'AGUARDANDO INFORMAÇÃO',fluxos:['gc','fiscal'],causa:'CR013',gut_g:5,gut_u:5,gut_t:4,gut:100},
+  {key:'STI-67856',sum:'Monitoramento: ERP totvs_ws_chk_commit fora do ar',pri:5,status:'AGUARDANDO ATENDIMENTO N1',fluxos:['gc'],causa:'CR015',gut_g:3,gut_u:3,gut_t:2,gut:18},
+  {key:'STI-67855',sum:'Contagem em branco — grupo 27',pri:2,status:'AGUARDANDO INFORMAÇÃO',fluxos:['inventario'],causa:'CR011',gut_g:4,gut_u:4,gut_t:5,gut:80},
+  {key:'STI-67854',sum:'Contagem cíclica — grupo 27 não abre',pri:2,status:'AGUARDANDO INFORMAÇÃO',fluxos:['inventario'],causa:'CR011',gut_g:4,gut_u:4,gut_t:5,gut:80},
+  {key:'STI-67853',sum:'Monitoramento: ERP totvs_ws_host_backoffice',pri:5,status:'Rejeitado',fluxos:['gc'],causa:'CR015',gut_g:2,gut_u:2,gut_t:2,gut:8},
+  {key:'STI-67852',sum:'Monitoramento: DATABRICKS_ERROR MT3_SUPORTE',pri:2,status:'AGUARDANDO ATENDIMENTO N1',fluxos:['outro'],causa:'CR_OUT',gut_g:3,gut_u:3,gut_t:3,gut:27},
+  {key:'STI-67851',sum:'Sem acesso ao GC/JAVA',pri:5,status:'Rejeitado',fluxos:['gc'],causa:'CR014',gut_g:2,gut_u:2,gut_t:2,gut:8},
+  {key:'STI-67850',sum:'Contagem da semana em branco — grupo 27',pri:5,status:'AGUARDANDO INFORMAÇÃO',fluxos:['inventario'],causa:'CR011',gut_g:4,gut_u:4,gut_t:5,gut:80},
+  {key:'STI-67849',sum:'Placa e lacres não integrados ao SAEsys',pri:3,status:'AGUARDANDO ATENDIMENTO N1',fluxos:['saesys','gc'],causa:'CR010',gut_g:5,gut_u:5,gut_t:4,gut:100},
+  {key:'STI-67848',sum:'Recebimento de Cajamar não cadastrado no sistema',pri:5,status:'AGUARDANDO ATENDIMENTO N1',fluxos:['fiscal','loja'],causa:'CR006',gut_g:3,gut_u:4,gut_t:3,gut:36},
+  {key:'STI-67847',sum:'Localizar embarque do pedido',pri:2,status:'Aguardando Usuário',fluxos:['gc','nexthub'],causa:'CR009',gut_g:3,gut_u:3,gut_t:3,gut:27},
+  {key:'STI-67846',sum:'Embarques como Transferência — deve ser Last Mile',pri:1,status:'Resolvido',fluxos:['nexthub'],causa:'CR001',gut_g:4,gut_u:4,gut_t:3,gut:48},
+  {key:'STI-67845',sum:'Contagem do grupo 27 em branco — reincidente',pri:5,status:'AGUARDANDO INFORMAÇÃO',fluxos:['inventario'],causa:'CR011',gut_g:4,gut_u:4,gut_t:5,gut:80},
+  {key:'STI-67844',sum:'Erro ao faturar pedido 1776609561357',pri:2,status:'AGUARDANDO ATENDIMENTO N1',fluxos:['gc','fiscal'],causa:'CR013',gut_g:4,gut_u:5,gut_t:4,gut:80}
+];
+
+const CAUSAS=[
+  {id:'CR001',nivel:'crit',gut:125,gut_g:5,gut_u:5,gut_t:5,
+   nome:'Integração GC → NextHub falha (NiFi / payload)',
+   desc:'Pedidos ficam presos entre GC e NextHub por falhas no pipeline NiFi ou por payload com campos inválidos. Historicamente recorrente. Correções parciais entregues em março/2026, mas chamados persistem — cenários de borda não cobertos.',
+   onde:'GC Core → Apache NiFi → NextHub / MOS',
+   impacto:'ALTO — Pedidos de clientes não entram para separação/expedição. Gera atraso de entrega, reclamações no RA e impacto direto em NPS. 3 chamados hoje.',
+   corrigir:'1. Reprocessamento manual via reinjeção NiFi (N1). 2. Revisar logs NiFi para identificar padrão de payload com falha. 3. Mapear cenários de borda não cobertos pelo fix março/2026. 4. Criar alerta de fila NiFi com abertura automática de STI.',
+   fluxos:['nexthub','gc'],chamados:['STI-67863','STI-67858','STI-67846']},
+
+  {id:'CR011',nivel:'crit',gut:80,gut_g:4,gut_u:4,gut_t:5,
+   nome:'Contagem cíclica em branco — job não gera itens para grupo',
+   desc:'Job de geração do ciclo de contagem não popula itens para grupos específicos (grupo 27). Problema semanal recorrente — 5 chamados abertos hoje. Sem alerta automático quando ciclo é gerado vazio.',
+   onde:'GC Estoque — módulo de contagem cíclica (GC Web / job de ciclo)',
+   impacto:'ALTO — Inventário físico do CD paralisado. Acuracidade de estoque comprometida sem contagem cíclica. Alta tendência de reincidência (T=5).',
+   corrigir:'1. Verificar execução do job de ciclo e reprocessar para grupo 27 imediatamente. 2. Investigar parâmetros de filial/grupo que impedem geração. 3. Criar alerta automático quando contagem gerada estiver vazia antes de iniciar o período.',
+   fluxos:['inventario'],chamados:['STI-67862','STI-67855','STI-67854','STI-67850','STI-67845']},
+
+  {id:'CR003',nivel:'crit',gut:100,gut_g:5,gut_u:5,gut_t:4,
+   nome:'Desprogramação de pedido bloqueada no WMS',
+   desc:'Operação tenta desprogramar pedido para reagendar ou corrigir, mas sistema retorna erro WMS. Ocorre em pedidos com tipos mistos (PPP + loja) ou Pré-PDS não convertidos (D+1). PRC_DESPROGRAMAR_IPV foi corrigido em março/2026 mas casos residuais persistem.',
+   onde:'GC Core — PRC_DESPROGRAMAR_IPV → NextHub / WMS',
+   impacto:'ALTO — Pedidos travados sem possibilidade de correção operacional. Exige intervenção N2, aumentando lead time de resolução e impactando entrega ao cliente.',
+   corrigir:'1. N2: desvincula tarefas no WMS e cancela/reprograma no GC manualmente. 2. Validar se casos residuais são cenários não cobertos pelo fix março. 3. Confirmar estabilidade da remoção automática de Pré-PDS D+1.',
+   fluxos:['gc','nexthub'],chamados:['STI-67860','STI-67859']},
+
+  {id:'CR013',nivel:'crit',gut:100,gut_g:5,gut_u:5,gut_t:4,
+   nome:'Faturamento lento ou bloqueado — pedido não muda status',
+   desc:'Lentidão no faturamento (checkout 3) e pedidos que não alteram status ao serem enviados para faturamento. Indica instabilidade no serviço TOTVS ERP ou conflito de programação (peças divergentes entre pedido origem e programação).',
+   onde:'GC — LG045F (faturamento) / TOTVS ERP serviços / totvs_ws_chk_commit',
+   impacto:'ALTO — Pedidos faturados com atraso comprometem SLA de expedição. Em loja física, impede emissão imediata de nota. Risco de acúmulo em cascata.',
+   corrigir:'1. Verificar status do serviço totvs_ws_chk_commit. 2. Investigar conflito de programação: validar nr de peças na programação vs pedido origem. 3. Ajustar programação manualmente. 4. Monitorar checkout 3 especificamente.',
+   fluxos:['gc','fiscal'],chamados:['STI-67857','STI-67861','STI-67844']},
+
+  {id:'CR010',nivel:'high',gut:100,gut_g:5,gut_u:5,gut_t:4,
+   nome:'Placa/lacre não integrado ao SAEsys — desembarque bloqueado',
+   desc:'CD envia caminhão ao entreposto, mas placa e lacres não aparecem no SAEsys. Desembarque sistêmico das mercadorias fica impossibilitado. Relacionado a falha na geração/envio do EDI via FR003F.',
+   onde:'GC Expedição (FR003F / EDI) → SAEsys Entreposto',
+   impacto:'ALTO — Desembarque físico na doca paralisado. Motorista e equipe imobilizados. Risco de atraso em cascata na roteirização.',
+   corrigir:'1. Cadastrar/reenviar placa e lacres manualmente no SAEsys (N1). 2. Verificar se FR003F gerou EDI antes da saída. 3. Melhoria: bloquear FR005F se EDI não foi confirmado pelo SAEsys.',
+   fluxos:['saesys','gc'],chamados:['STI-67849']},
+
+  {id:'CR006',nivel:'high',gut:36,gut_g:3,gut_u:4,gut_t:3,
+   nome:'NF autorizada no fiscal não aparece no WMS para desembarque',
+   desc:'Nota autorizada pelo fiscal via RC106F não aparece em "carros aguardando desembarque" no WMS NextHub. Recebimento físico fica parado. Um dos chamados de maior volume no fluxo inbound.',
+   onde:'GC Fiscal (RC106F) → WMS NextHub (tela de desembarque)',
+   impacto:'MÉDIO-ALTO — Recebimento físico paralisado. Caminhão aguarda na doca sem dar baixa sistêmica. Pode gerar custo de imobilização.',
+   corrigir:'1. N1: localizar NF no banco GC, verificar ausência na visão WMS e forçar integração manualmente. 2. N2: reprocessamento via trigger/script. 3. Melhoria: validação pós-manifesto antes de liberar RC106F.',
+   fluxos:['fiscal','nexthub'],chamados:['STI-67848']},
+
+  {id:'CR009',nivel:'high',gut:27,gut_g:3,gut_u:3,gut_t:3,
+   nome:'FR002F — romaneio não localizado para vínculo de caminhão',
+   desc:'Ao tentar vincular caminhões sistêmicos na FR002F, o romaneio não é encontrado. Causa: divergência entre data/hora de fechamento no Siior e entrada na FR001F do GC. Identificado em múltiplas sessões de mapeamento.',
+   onde:'GC Expedição (FR001F / FR002F) ↔ Siior',
+   impacto:'ALTO quando ocorre — Expedição bloqueada, caminhão não pode ser vinculado e liberado. Gera alto volume de chamados na época.',
+   corrigir:'1. N1: verificar e sincronizar data/hora Siior↔GC; confirmar fechamento no Siior antes de FR002F. 2. Melhoria estrutural: validação em tempo real da consistência Siior↔GC antes de habilitar vínculo.',
+   fluxos:['gc','saesys'],chamados:['STI-67847']},
+
+  {id:'CR015',nivel:'med',gut:18,gut_g:3,gut_u:3,gut_t:2,
+   nome:'Monitoramento automático — falsos positivos na fila',
+   desc:'Tickets criados por jobs de monitoramento (TOTVS ERP, Databricks) que resolvem sozinhos ou são rejeitados. Poluem a fila STI e dificultam a triagem dos chamados operacionais reais.',
+   onde:'STI — triagem e categorização de chamados',
+   impacto:'BAIXO operacionalmente, MÉDIO para o processo de suporte — métricas distorcidas, analistas perdem tempo triando tickets automáticos.',
+   corrigir:'1. Criar tipo de solicitação separado para monitoramento automático, excluído das métricas. 2. Implementar auto-resolução quando serviço voltar. 3. Revisar threshold de alertas.',
+   fluxos:['gc'],chamados:['STI-67856','STI-67853']},
+
+  {id:'CR_OUT',nivel:'med',gut:27,gut_g:3,gut_u:3,gut_t:3,
+   nome:'Chamado fora do escopo Core GC',
+   desc:'Chamados relacionados a sistemas externos ao escopo da squad (Databricks, pagamentos). Roteamento incorreto aumenta TTR e gera retrabalho.',
+   onde:'STI — triagem e roteamento para squad correta',
+   impacto:'BAIXO para a squad. Causa ruído na fila e métricas de chamados.',
+   corrigir:'Revisar categorização no STI para roteamento automático para a squad correta. Criar regra de tipo de solicitação para Databricks.',
+   fluxos:['outro'],chamados:['STI-67852']}
+];
+
+// ── estado ──
+let chF='all', caF='all';
+
+// ── helpers ──
+function gC(g){return g>=100?'#e85c5c':g>=50?'#f5a623':'#4f7fff';}
+function ftag(f){return`<span class="ftag f-${f}">${FL[f]||f}</span>`;}
+function gBadge(g){const c=g>=100?'g-crit':g>=50?'g-high':'g-med';return`<span class="gbadge ${c}">${g}</span>`;}
+function scol(s){return s==='Resolvido'?'#2ecc8e':s==='Rejeitado'?'#50556a':'#f5a623';}
+function gBar(l,v,col){const p=Math.round(v/5*100);return`<div class="grow"><span class="glbl">${l}</span><div class="gtrack"><div class="gfill" style="width:${p}%;background:${col}"></div></div><span class="gnum">${v}</span></div>`;}
+
+// ── nav ──
+function gotoPage(id,el){
+  document.querySelectorAll('.page').forEach(p=>p.classList.remove('on'));
+  document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('on'));
+  document.getElementById('p-'+id).classList.add('on');
+  if(el)el.classList.add('on');
+}
+function filterFluxo(f,el){
+  chF=f;
+  document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('on'));
+  if(el)el.classList.add('on');
+  document.querySelectorAll('#fbar-ch .fchip').forEach(c=>c.classList.remove('on'));
+  gotoPage('chamados',null);
+  renderChamados();
+}
+function fCh(f,el){chF=f;document.querySelectorAll('#fbar-ch .fchip').forEach(c=>c.classList.remove('on'));el.classList.add('on');renderChamados();}
+function fCa(f,el){caF=f;document.querySelectorAll('#fbar-ca .fchip').forEach(c=>c.classList.remove('on'));el.classList.add('on');renderCausas();}
+
+// ── render chamados ──
+function renderChamados(){
+  const list=chF==='all'?CHAMADOS:CHAMADOS.filter(c=>c.fluxos.includes(chF));
+  document.getElementById('cham-cnt').textContent=`${list.length} registro${list.length!==1?'s':''}`;
+  document.getElementById('tbody').innerHTML=list.map(c=>{
+    const cr=CAUSAS.find(x=>x.id===c.causa);
+    return`<tr>
+      <td><span class="skey">${c.key}</span></td>
+      <td style="max-width:190px;word-break:break-word;font-size:12px">${c.sum}</td>
+      <td><span class="pbadge p${c.pri}">${PL[c.pri]}</span></td>
+      <td><span class="schip"><span class="sdot" style="background:${scol(c.status)}"></span><span style="font-size:11px">${c.status}</span></span></td>
+      <td>${c.fluxos.map(ftag).join('')}</td>
+      <td style="max-width:150px;font-size:11px;color:var(--t2)">${cr?.nome||c.causa}</td>
+      <td>${gBadge(c.gut)}</td>
+    </tr>`;
+  }).join('');
+}
+
+// ── render causas ──
+function renderCausas(){
+  let list=[...CAUSAS].sort((a,b)=>b.gut-a.gut);
+  if(caF==='crit') list=list.filter(c=>c.gut>=100);
+  else if(caF==='high') list=list.filter(c=>c.gut>=50&&c.gut<100);
+  else if(caF==='med')  list=list.filter(c=>c.gut<50);
+  document.getElementById('cgrid').innerHTML=list.map(c=>{
+    const col=gC(c.gut);
+    const lv=c.gut>=100?'crit':c.gut>=50?'high':'med';
+    return`<div class="ccard ${lv}">
+      <div class="ctop"><span class="ctitle">${c.nome}</span><span class="gbadge g-${lv}">GUT ${c.gut}</span></div>
+      <div class="cdesc">${c.desc}</div>
+      <div class="cmeta">
+        <div class="mbox"><div class="mlbl">Onde impacta</div><div class="mval">${c.onde}</div></div>
+        <div class="mbox"><div class="mlbl">Tamanho do impacto</div><div class="mval">${c.impacto}</div></div>
+      </div>
+      <div class="mbox"><div class="mlbl">O que corrigir</div><div class="mval">${c.corrigir}</div></div>
+      <div class="gut-bars">${gBar('G',c.gut_g,col)}${gBar('U',c.gut_u,col)}${gBar('T',c.gut_t,col)}</div>
+      <div class="ctags">${c.fluxos.map(ftag).join('')}<span class="ccount">${c.chamados.length} chamado${c.chamados.length!==1?'s':''} hoje</span></div>
+    </div>`;
+  }).join('');
+}
+
+// ── render charts ──
+function renderCharts(){
+  // Fluxos
+  const fc={};
+  CHAMADOS.forEach(c=>c.fluxos.forEach(f=>fc[f]=(fc[f]||0)+1));
+  const sf=Object.entries(fc).sort((a,b)=>b[1]-a[1]);
+  const mf=sf[0]?.[1]||1;
+  document.getElementById('chart-fluxos').innerHTML=sf.map(([f,n])=>
+    `<div class="brow"><span class="blbl" style="width:120px">${FL[f]||f}</span><div class="btrack"><div class="bfill" style="width:${Math.round(n/mf*100)}%;background:${FC[f]||'#888'}"></div></div><span class="bval">${n}</span></div>`).join('');
+  // Donut
+  const pc={1:0,2:0,3:0,4:0,5:0};
+  CHAMADOS.forEach(c=>pc[c.pri]++);
+  const total=CHAMADOS.length;
+  const cv=document.getElementById('donut');
+  const ctx=cv.getContext('2d');
+  let ang=-Math.PI/2;
+  ctx.clearRect(0,0,110,110);
+  [1,2,3,4,5].forEach(p=>{
+    if(!pc[p])return;
+    const sl=(pc[p]/total)*Math.PI*2;
+    ctx.beginPath();ctx.moveTo(55,55);ctx.arc(55,55,48,ang,ang+sl);ctx.closePath();ctx.fillStyle=PC[p];ctx.fill();
+    ang+=sl;
+  });
+  ctx.beginPath();ctx.arc(55,55,28,0,Math.PI*2);ctx.fillStyle='#13161d';ctx.fill();
+  document.getElementById('dlegend').innerHTML=[1,2,3,4,5].filter(p=>pc[p]>0).map(p=>
+    `<div class="dleg-item"><span class="dleg-dot" style="background:${PC[p]}"></span><span class="dleg-lbl">${PL[p]}</span><span class="dleg-val">${pc[p]}</span></div>`).join('');
+  // GUT
+  const top=[...CAUSAS].sort((a,b)=>b.gut-a.gut);
+  const mg=top[0]?.gut||1;
+  document.getElementById('chart-gut').innerHTML=top.map(c=>
+    `<div class="brow"><span class="blbl" style="width:280px;font-size:12px">${c.nome}</span><div class="btrack"><div class="bfill" style="width:${Math.round(c.gut/mg*100)}%;background:${gC(c.gut)}"></div></div><span class="bval" style="color:${gC(c.gut)};font-weight:500">${c.gut}</span></div>`).join('');
+}
+
+// ── export ──
+function exportCsv(){
+  const list=chF==='all'?CHAMADOS:CHAMADOS.filter(c=>c.fluxos.includes(chF));
+  const rows=[['Ticket','Título','Prioridade','Status','Fluxos','Causa ID','Causa Nome','G','U','T','GUT']];
+  list.forEach(c=>{const cr=CAUSAS.find(x=>x.id===c.causa);rows.push([c.key,c.sum,PL[c.pri],c.status,c.fluxos.join(';'),c.causa,cr?.nome||'',c.gut_g,c.gut_u,c.gut_t,c.gut]);});
+  const csv=rows.map(r=>r.map(v=>`"${String(v).replace(/"/g,'""')}"`).join(',')).join('\n');
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(new Blob(['\uFEFF'+csv],{type:'text/csv;charset=utf-8'}));
+  a.download='core_gc_causas_raiz_20260420.csv';a.click();
+}
+
+renderChamados();renderCausas();renderCharts();
+</script>
+</body>
+</html>
