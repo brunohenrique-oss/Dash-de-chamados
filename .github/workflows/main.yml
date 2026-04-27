@@ -1,0 +1,15 @@
+name: Atualizar Dashboard Core GC
+
+on:
+  workflow_dispatch:
+
+jobs:
+  atualizar:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Baixar repositório
+        uses: actions/checkout@v4
+
+      - name: Teste inicial
+        run: echo "Workflow funcionando - Core GC"
