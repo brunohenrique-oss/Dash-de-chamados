@@ -2,14 +2,36 @@ name: Atualizar Dashboard Core GC
 
 on:
   workflow_dispatch:
+  schedule:
+    - cron: '0 11 * * *'  # todo dia 8h BRT
 
 jobs:
   atualizar:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Baixar repositório
+      - name: Checkout do repo
         uses: actions/checkout@v4
 
-      - name: Teste inicial
-        run: echo "Workflow funcionando - Core GC"
+      - name: Instalar Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Instalar dependências
+        run: pip install requests
+
+      - name: Rodar script Jira
+        env:
+          JIRA_BASE_URL: ${{ secrets.JIRA_BASE_URL }}
+          JIRA_EMAIL: ${{ secrets.JIRA_EMAIL }}
+          JIRA_API_TOKEN: ${{ secrets.JIRA_API_TOKEN }}
+        run: python update_jira.py
+
+      - name: Commit do data.json
+        run: |
+          git config --global user.name "github-actions"
+          git config --global user.email "actions@github.com"
+          git add data.json
+          git commit -m "Atualizando dados do Jira" || echo "Sem mudanças"
+          git push
