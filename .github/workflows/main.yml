@@ -3,7 +3,7 @@ name: Atualizar Dashboard Core GC
 on:
   workflow_dispatch:
   schedule:
-    - cron: '0 11 * * *'  # todo dia 8h BRT
+    - cron: '0 11 * * *'
 
 jobs:
   atualizar:
